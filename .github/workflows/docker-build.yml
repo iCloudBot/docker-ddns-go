@@ -1,0 +1,85 @@
+name: Docker Build Workflow
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  build:
+    name: Docker Build and Push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+
+      - name: Extract issue details
+        id: extract
+        run: |
+          # VERSION=$(echo "${{ github.event.issue.title }}")
+          IMAGE_NAME_1=$(echo "${{ github.event.issue.body }}" | awk '/- \[[xX]\] cleverest\/ddns-go/ {print "cleverest/ddns-go"}')
+          IMAGE_NAME_2=$(echo "${{ github.event.issue.body }}" | awk '/- \[[xX]\] registry.cn-chengdu.aliyuncs.com\/dockerip\/ddns-go/ {print "registry.cn-chengdu.aliyuncs.com/dockerip/ddns-go"}')
+          VERSION=$(echo "${{ github.event.issue.body }}" | awk '/^### ddns-go Version/ {getline; getline; print}' | tr -d '[:space:]')
+          ARCH=$(echo "${{ github.event.issue.body }}" | awk '/^### ARCH/ {getline; getline; print}' | tr -d '[:space:]')
+          LATEST=$(echo "${{ github.event.issue.body }}" | awk '/- \[[xX]\] latest/ {print "true"}')
+
+          if [[ "$ARCH" == "amd64" ]]; then
+            ARCH_2="x86_64"
+          elif [[ "$ARCH" == "arm64" ]]; then
+            ARCH_2="arm64"
+          fi
+
+          if [[ "$IMAGE_NAME_1" != "" ]]; then
+            echo "needs_dockerhub_login=true" >> $GITHUB_ENV
+          else
+            echo "needs_dockerhub_login=false" >> $GITHUB_ENV
+          fi
+
+          if [[ "$IMAGE_NAME_2" != "" ]]; then
+            echo "needs_aliacr_login=true" >> $GITHUB_ENV
+          else
+            echo "needs_aliacr_login=false" >> $GITHUB_ENV
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_ENV
+          echo "arch=$ARCH" >> $GITHUB_ENV
+          echo "arch_2=$ARCH_2" >> $GITHUB_ENV
+          echo "image_name_1=$IMAGE_NAME_1" >> $GITHUB_ENV
+          echo "image_name_2=$IMAGE_NAME_2" >> $GITHUB_ENV
+          echo "latest=$LATEST" >> $GITHUB_ENV
+
+      - name: Login to Ali ACR
+        if: env.needs_aliacr_login == 'true'
+        uses: aliyun/acr-login@v1
+        with:
+          login-server: https://registry.cn-chengdu.aliyuncs.com
+          username: ${{ secrets.Ali_ACR_USERNAME }}
+          password: ${{ secrets.Ali_ACR_PASSWORD }}
+
+      - name: Login to Docker Hub
+        if: env.needs_dockerhub_login == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and Push Docker Image
+        run: |
+          if [[ "${{ env.needs_dockerhub_login }}" == "true" ]]; then
+            docker buildx build --build-arg VERSION=${{ env.version }} --build-arg ARCH=${{ env.arch_2 }} --platform linux/${{ env.arch }} -t ${{ env.image_name_1 }}:${{ env.version }} -f Dockerfile --push .
+            if [[ "${{ env.latest }}" == "true" ]]; then
+              docker buildx build --build-arg VERSION=${{ env.version }} --build-arg ARCH=${{ env.arch_2 }} --platform linux/${{ env.arch }} -t ${{ env.image_name_1 }}:latest -f Dockerfile --push .
+            fi
+          elif [[ "${{ env.needs_aliacr_login }}" == "true" ]]; then
+            docker buildx build --build-arg VERSION=${{ env.version }} --build-arg ARCH=${{ env.arch_2 }} --platform linux/${{ env.arch }} -t ${{ env.image_name_2 }}:${{ env.version }} -f Dockerfile --push .
+            if [[ "${{ env.latest }}" == "true" ]]; then
+              docker buildx build --build-arg VERSION=${{ env.version }} --build-arg ARCH=${{ env.arch_2 }} --platform linux/${{ env.arch }} -t ${{ env.image_name_2 }}:latest -f Dockerfile --push .
+            fi
+          fi
+
+          docker system prune -a -f

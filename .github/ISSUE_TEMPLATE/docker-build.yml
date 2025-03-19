@@ -1,0 +1,45 @@
+name: Docker Build Request
+description: Request a Docker image build and push
+title: "6.9.1"
+labels:
+  - Docker Build
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 自动化镜像构建
+
+  - type: checkboxes
+    id: image_name
+    attributes:
+      label: Build image name
+      description: 构建镜像的名称选择
+      options:
+        - label: cleverest/ddns-go
+        - label: registry.cn-chengdu.aliyuncs.com/dockerip/ddns-go
+
+  - type: input
+    id: version
+    attributes:
+      label: ddns-go Version
+      description: 构建的版本tag (e.g., 6.9.1)
+      placeholder: 6.9.1
+    validations:
+      required: true
+
+  - type: input
+    id: arch
+    attributes:
+      label: ARCH
+      description: 系统架构 (e.g., amd64、arm64)
+      placeholder: amd64
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: push_latest
+    attributes:
+      label: Push with latest
+      description: 是否推送 latest 版本
+      options:
+        - label: latest
